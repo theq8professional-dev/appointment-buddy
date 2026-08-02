@@ -437,6 +437,10 @@ async function processTranscript(text){
 
 If the speaker names a weekday together with a specific month and day and the two don't actually match (e.g. "Saturday, August 9th" when August 9th isn't a Saturday), IGNORE the weekday entirely and use the explicit month/day — people misspeak the weekday far more often than the date. Never let a mismatched weekday block or change the date you extract. The same goes for any other small self-contradiction: prefer the most specific, concrete detail (an exact date, an exact time) over a looser or conflicting one, and don't let the conflict stop you from producing a best-guess answer.
 
+If they give a month and day but no year (e.g. "October 9th"), assume the NEXT upcoming occurrence of that date relative to today — if that month/day has already passed this year, use next year; otherwise use this year. Never default to a past date.
+
+The speaker may not mention a doctor's name at all, only a specialty or reason (e.g. "the orthopedic," "my dentist," "eye doctor"). That's completely fine — leave doctorName as an empty string in that case rather than guessing a name, and fill in specialty as best you can from what they said.
+
 Respond with ONLY a raw JSON object, no markdown fences, no citations, no extra text. Shape:
 {
   "doctorName": "string, best-guess proper name, or empty string if none mentioned",
@@ -480,10 +484,17 @@ function formatDatePretty(iso){
   return dt.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
 }
 
+// Builds a natural label whether or not a doctor's name was actually given.
+function displayLabel(appt){
+  if(appt.doctorName) return `Dr. ${appt.doctorName}`;
+  if(appt.specialty) return `${appt.specialty} appointment`;
+  return 'Appointment';
+}
+
 function showConfirmation(parsed, rawText){
   pendingAppt = {
     id: Date.now().toString(),
-    doctorName: parsed.doctorName || 'Doctor',
+    doctorName: (parsed.doctorName || '').trim(),
     specialty: parsed.specialty || '',
     date: parsed.date || '',
     time: parsed.time || '',
@@ -493,10 +504,13 @@ function showConfirmation(parsed, rawText){
     rawText
   };
   confirmDoctor.value = pendingAppt.doctorName;
+  confirmDoctor.placeholder = pendingAppt.specialty ? `${pendingAppt.specialty} (no name given)` : 'Doctor / provider name';
   confirmMeta.textContent = `${formatDatePretty(pendingAppt.date)}${pendingAppt.time ? ' at ' + pendingAppt.time : ''}${pendingAppt.specialty ? ' · ' + pendingAppt.specialty : ''}`;
-  confirmVerify.innerHTML = pendingAppt.verified
-    ? `<span class="verify-tag ok">✓ ${pendingAppt.verifyNote || 'Looks right'}</span>`
-    : `<span class="verify-tag unsure">? ${pendingAppt.verifyNote || 'Double-check the name'}</span>`;
+  confirmVerify.innerHTML = !pendingAppt.doctorName
+    ? ''
+    : pendingAppt.verified
+      ? `<span class="verify-tag ok">✓ ${pendingAppt.verifyNote || 'Looks right'}</span>`
+      : `<span class="verify-tag unsure">? ${pendingAppt.verifyNote || 'Double-check the name'}</span>`;
   overlay.classList.add('show');
   hint.textContent = '';
 }
@@ -529,8 +543,8 @@ function render(){
     card.dataset.id = appt.id;
     card.innerHTML = `
       <div>
-        <div class="card-doc">Dr. ${escapeHtml(appt.doctorName)}</div>
-        <div class="card-sub">${escapeHtml(appt.specialty || appt.location || '')}</div>
+        <div class="card-doc">${escapeHtml(displayLabel(appt))}</div>
+        <div class="card-sub">${escapeHtml(appt.doctorName ? (appt.specialty || appt.location || '') : (appt.location || ''))}</div>
       </div>
       <div class="card-when">
         <div class="card-date">${formatDatePretty(appt.date)}</div>
