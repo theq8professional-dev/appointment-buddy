@@ -119,7 +119,10 @@
     color: var(--ink-soft);
     font-weight:700;
     letter-spacing:.2px;
-    height:20px;
+    min-height:20px;
+    max-width: 320px;
+    text-align: center;
+    line-height:1.4;
     margin-bottom: 30px;
   }
 
@@ -424,11 +427,102 @@ micBtn.addEventListener('pointercancel', stopRecording);
 micBtn.addEventListener('contextmenu', (e)=> e.preventDefault());
 micBtn.addEventListener('dragstart', (e)=> e.preventDefault());
 
-// ---------- Claude parsing + verification ----------
+// ---------- Local fallback parser (works with no server/API at all) ----------
+// Used automatically whenever the Claude API call isn't reachable — e.g. when this
+// page is hosted standalone (GitHub Pages) instead of inside Claude's own preview,
+// which is the only place that proxy call can authenticate.
+const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+const WEEKDAYS = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const SPECIALTIES = ['orthopedic','orthopedist','dentist','dermatologist','cardiologist','nephrologist','urologist',
+  'gynecologist','pediatrician','optometrist','ophthalmologist','psychiatrist','therapist','physical therapist',
+  'chiropractor','dermatology','oncologist','neurologist','ent','allergist','endocrinologist','podiatrist',
+  'eye doctor','general practitioner','primary care','gp','surgeon'];
+
+function localParse(text, todayStr){
+  const lower = text.toLowerCase();
+  const [ty, tm, td] = todayStr.split('-').map(Number);
+  const today = new Date(ty, tm-1, td);
+  let date = '';
+  let time = '';
+  let doctorName = '';
+  let specialty = '';
+
+  // --- date: explicit "Month Day[, Year]" wins over everything else ---
+  const monthDayRe = new RegExp(`(${MONTHS.join('|')})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s*(\\d{4}))?`, 'i');
+  const md = lower.match(monthDayRe);
+  if(md){
+    const monthIdx = MONTHS.indexOf(md[1].toLowerCase());
+    const day = parseInt(md[2], 10);
+    let year = md[3] ? parseInt(md[3], 10) : today.getFullYear();
+    if(!md[3]){
+      const candidate = new Date(year, monthIdx, day);
+      if(candidate < today) year += 1; // no year given -> next upcoming occurrence
+    }
+    const d = new Date(year, monthIdx, day);
+    date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  } else if(/\btomorrow\b/.test(lower)){
+    const d = new Date(today); d.setDate(d.getDate()+1);
+    date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  } else if(/\btoday\b/.test(lower)){
+    date = todayStr;
+  } else {
+    const wdRe = new RegExp(`(next\\s+)?(${WEEKDAYS.join('|')})`, 'i');
+    const wd = lower.match(wdRe);
+    if(wd){
+      const targetIdx = WEEKDAYS.indexOf(wd[2].toLowerCase());
+      const d = new Date(today);
+      let diff = (targetIdx - d.getDay() + 7) % 7;
+      if(diff === 0 || wd[1]) diff += 7; // "next" or same-day-name means the upcoming one, not today
+      d.setDate(d.getDate() + diff);
+      date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+  }
+
+  // --- time ---
+  const timeRe = /(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)/i;
+  const tmatch = text.match(timeRe);
+  if(tmatch){
+    let h = parseInt(tmatch[1], 10);
+    const min = tmatch[2] || '00';
+    const ampm = /p/i.test(tmatch[3]) ? 'PM' : 'AM';
+    time = `${h}:${min} ${ampm}`;
+  } else if(/\bnoon\b/.test(lower)){
+    time = '12:00 PM';
+  } else if(/\bmidnight\b/.test(lower)){
+    time = '12:00 AM';
+  }
+
+  // --- doctor name: "Dr./Doctor <Name>" or "with <Name>" ---
+  const nameRe = /\b(?:dr\.?|doctor)\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)/;
+  const nmatch = text.match(nameRe);
+  if(nmatch){
+    doctorName = nmatch[1];
+  } else {
+    const withRe = /\bwith\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)\b/;
+    const wmatch = text.match(withRe);
+    if(wmatch && !SPECIALTIES.includes(wmatch[1].toLowerCase())) doctorName = wmatch[1];
+  }
+
+  // --- specialty: match against known keyword list ---
+  for(const s of SPECIALTIES){
+    if(lower.includes(s)){ specialty = s.replace(/\b\w/g, c => c.toUpperCase()); break; }
+  }
+
+  return { doctorName, specialty, date, time, location: '', verified: false, verifyNote: '' };
+}
+
+function withTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+  ]);
+}
+
+// ---------- Claude parsing (with automatic local fallback) ----------
 async function processTranscript(text){
   if(!text){ hint.textContent = "I didn't hear anything — try again"; return; }
   micBtn.classList.add('thinking');
-  hint.textContent = "Let me figure that out…";
+  hint.textContent = `Heard: "${text}" — figuring it out…`;
 
   const today = new Date();
   const todayStr = today.toISOString().slice(0,10);
@@ -452,8 +546,9 @@ Respond with ONLY a raw JSON object, no markdown fences, no citations, no extra 
   "verifyNote": "very short string, e.g. 'Found a nephrologist by this name nearby' or 'Could not confirm this name'"
 }`;
 
+  let parsed = null;
   try{
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await withTimeout(fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -463,18 +558,23 @@ Respond with ONLY a raw JSON object, no markdown fences, no citations, no extra 
         messages: [{ role: "user", content: `Here's what they said: "${text}"` }],
         tools: [{ type: "web_search_20250305", name: "web_search" }]
       })
-    });
+    }), 8000);
     const data = await response.json();
     const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
     const clean = textBlocks.replace(/```json|```/g, '').trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
-    showConfirmation(parsed, text);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
   }catch(err){
-    hint.textContent = "Something went wrong — try again";
-  }finally{
-    micBtn.classList.remove('thinking');
+    // No AI proxy available (e.g. hosted standalone) or it timed out — fall back to local parsing.
+    parsed = localParse(text, todayStr);
   }
+  micBtn.classList.remove('thinking');
+
+  if(!parsed.doctorName && !parsed.specialty && !parsed.date && !parsed.time){
+    hint.textContent = `Heard: "${text}" — but couldn't pull out a date or name. Try again with a clearer date/time.`;
+    return;
+  }
+  showConfirmation(parsed, text);
 }
 
 function formatDatePretty(iso){
