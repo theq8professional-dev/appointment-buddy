@@ -127,76 +127,41 @@
   }
 
   /* --- Confirm card --- */
-  .overlay{
-    position:fixed; inset:0;
-    background:rgba(58,46,34,0.45);
-    display:flex; align-items:center; justify-content:center;
-    padding:20px;
-    z-index:50;
-    opacity:0; pointer-events:none;
-    transition:opacity .25s ease;
+  /* --- Save toast (replaces the old confirm screen — instant save, brief undo window) --- */
+  .toast{
+    position:fixed;
+    left:16px; right:16px; bottom:24px;
+    max-width:420px;
+    margin:0 auto;
+    background:var(--teal-deep);
+    color:white;
+    border-radius:18px;
+    padding:14px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.3);
+    transform: translateY(120%);
+    opacity:0;
+    transition: transform .3s ease, opacity .3s ease;
+    z-index:60;
   }
-  .overlay.show{ opacity:1; pointer-events:auto; }
-  .confirm-card{
-    background:var(--cream);
-    border-radius:28px;
-    padding:28px 24px;
-    max-width:380px;
-    width:100%;
-    box-shadow:0 20px 50px rgba(0,0,0,0.25);
-    text-align:center;
-    transform: translateY(16px) scale(.96);
-    transition: transform .25s ease;
-  }
-  .overlay.show .confirm-card{ transform: translateY(0) scale(1); }
-  .confirm-eyebrow{ font-size:13px; font-weight:800; color:var(--teal); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;}
-  .confirm-doctor{
-    font-family:'Fredoka',sans-serif;
-    font-size:26px;
-    font-weight:600;
-    margin: 4px 0;
-    border:none;
-    background:transparent;
-    text-align:center;
-    width:100%;
-    color:var(--ink);
-    border-bottom: 2px dashed transparent;
-  }
-  .confirm-doctor:focus{ outline:none; border-bottom:2px dashed var(--honey); }
-  .confirm-fields{ display:flex; gap:8px; justify-content:center; margin: 10px 0 4px; }
-  .confirm-input{
-    font-family:'Nunito',sans-serif;
-    font-size:15px; font-weight:700;
-    border: 2px solid #E4D6C0;
+  .toast.show{ transform: translateY(0); opacity:1; }
+  .toast-title{ font-family:'Fredoka',sans-serif; font-weight:600; font-size:15px; }
+  .toast-sub{ font-size:13px; opacity:0.85; margin-top:2px; }
+  .toast button{
+    flex-shrink:0;
+    background:rgba(255,255,255,0.15);
+    color:white;
+    border:2px solid rgba(255,255,255,0.4);
     border-radius:12px;
-    padding:8px 10px;
-    color:var(--ink);
-    background:white;
-    text-align:center;
-  }
-  .confirm-input:focus{ outline:none; border-color:var(--honey); }
-  #confirmDate{ flex:1.2; }
-  #confirmTime{ flex:1; }
-  .confirm-specialty{ font-size:14px; color:var(--ink-soft); margin-bottom:4px; }
-  .confirm-warning{
-    display:inline-block; margin:8px 0; padding:8px 14px; border-radius:14px;
-    font-size:13px; font-weight:800;
-    background:#F8D9D3; color:#8A3A2C;
-  }
-  .verify-tag{
-    display:inline-block; margin-top:8px; padding:6px 14px; border-radius:999px;
-    font-size:13px; font-weight:800;
-  }
-  .verify-tag.ok{ background:#DCEEE8; color:var(--teal-deep); }
-  .verify-tag.unsure{ background:#F4E1D2; color:var(--honey-deep); }
-  .confirm-buttons{ display:flex; gap:10px; margin-top:22px; }
-  .confirm-buttons button{
-    flex:1; padding:14px 10px; border-radius:16px; border:none;
-    font-family:'Fredoka',sans-serif; font-weight:600; font-size:16px;
+    padding:8px 14px;
+    font-family:'Fredoka',sans-serif;
+    font-weight:600;
+    font-size:14px;
     cursor:pointer;
   }
-  .btn-save{ background:var(--teal); color:white; }
-  .btn-again{ background:transparent; color:var(--ink-soft); border:2px solid #E4D6C0 !important; }
 
   /* --- List --- */
   .list{ width:100%; max-width:460px; display:flex; flex-direction:column; gap:14px; }
@@ -248,23 +213,7 @@
   <div class="list" id="list"></div>
   <div class="empty" id="emptyMsg">No appointments yet. Press the button above whenever you book one.</div>
 
-  <div class="overlay" id="overlay">
-    <div class="confirm-card">
-      <div class="confirm-eyebrow">Did I get this right?</div>
-      <input class="confirm-doctor" id="confirmDoctor" />
-      <div class="confirm-fields">
-        <input type="date" class="confirm-input" id="confirmDate" />
-        <input type="text" class="confirm-input" id="confirmTime" placeholder="e.g. 4:30 PM" />
-      </div>
-      <div class="confirm-specialty" id="confirmSpecialty"></div>
-      <div id="confirmWarning"></div>
-      <div id="confirmVerify"></div>
-      <div class="confirm-buttons">
-        <button class="btn-again" id="btnAgain">Try again</button>
-        <button class="btn-save" id="btnSave">Yes, save it</button>
-      </div>
-    </div>
-  </div>
+  <div class="toast" id="toast"></div>
 
 <script>
 // ---------- Audio chimes (no external files) ----------
@@ -292,19 +241,10 @@ const micBtn = document.getElementById('micBtn');
 const hint = document.getElementById('hint');
 const listEl = document.getElementById('list');
 const emptyMsg = document.getElementById('emptyMsg');
-const overlay = document.getElementById('overlay');
-const confirmDoctor = document.getElementById('confirmDoctor');
-const confirmDate = document.getElementById('confirmDate');
-const confirmTime = document.getElementById('confirmTime');
-const confirmSpecialty = document.getElementById('confirmSpecialty');
-const confirmWarning = document.getElementById('confirmWarning');
-const confirmVerify = document.getElementById('confirmVerify');
-const btnSave = document.getElementById('btnSave');
-const btnAgain = document.getElementById('btnAgain');
+const toast = document.getElementById('toast');
 const r1 = document.querySelector('.r1');
 const r2 = document.querySelector('.r2');
 
-let pendingAppt = null;
 let appointments = [];
 
 // ---------- Storage ----------
@@ -608,11 +548,11 @@ Respond with ONLY a raw JSON object, no markdown fences, no citations, no extra 
   }
   micBtn.classList.remove('thinking');
 
-  if(!parsed.doctorName && !parsed.specialty && !parsed.date && !parsed.time){
-    hint.textContent = `Heard: "${text}" — but couldn't pull out a date or name. Try again with a clearer date/time.`;
+  if(!parsed.date){
+    hint.textContent = `Heard: "${text}" — but couldn't catch a date. Try again and include one (like "tomorrow" or "Monday").`;
     return;
   }
-  showConfirmation(parsed, text);
+  await autoSave(parsed, text);
 }
 
 function formatDatePretty(iso){
@@ -629,9 +569,10 @@ function displayLabel(appt){
   return 'Appointment';
 }
 
-function showConfirmation(parsed, rawText){
+// One motion: hold, talk, let go — it's saved. A brief toast with Undo is the only safety net.
+async function autoSave(parsed, rawText){
   const todayStr = new Date().toISOString().slice(0,10);
-  pendingAppt = {
+  const appt = {
     id: Date.now().toString(),
     doctorName: (parsed.doctorName || '').trim(),
     specialty: parsed.specialty || '',
@@ -642,25 +583,38 @@ function showConfirmation(parsed, rawText){
     verifyNote: parsed.verifyNote || '',
     rawText
   };
-  confirmDoctor.value = pendingAppt.doctorName;
-  confirmDoctor.placeholder = pendingAppt.specialty ? `${pendingAppt.specialty} (no name given)` : 'Doctor / provider name';
-  confirmDate.value = pendingAppt.date;
-  confirmTime.value = pendingAppt.time;
-  confirmSpecialty.textContent = pendingAppt.specialty || '';
+  const isPast = appt.date && appt.date < todayStr;
 
-  const isPast = pendingAppt.date && pendingAppt.date < todayStr;
-  confirmWarning.innerHTML = isPast
-    ? `<span class="confirm-warning">⚠ That date's already passed — check it</span>`
-    : (!pendingAppt.date ? `<span class="confirm-warning">⚠ Couldn't catch a date — please set one</span>` : '');
-
-  confirmVerify.innerHTML = !pendingAppt.doctorName
-    ? ''
-    : pendingAppt.verified
-      ? `<span class="verify-tag ok">✓ ${pendingAppt.verifyNote || 'Looks right'}</span>`
-      : `<span class="verify-tag unsure">? ${pendingAppt.verifyNote || 'Double-check the name'}</span>`;
-  overlay.classList.add('show');
+  appointments.push(appt);
+  await saveAppointments();
+  chimeSuccess();
+  render();
   hint.textContent = '';
-  speakConfirmation(pendingAppt, isPast);
+  speakConfirmation(appt, isPast);
+  showUndoToast(appt, isPast);
+}
+
+let toastTimer = null;
+function showUndoToast(appt, isPast){
+  clearTimeout(toastTimer);
+  const label = displayLabel(appt);
+  const when = `${formatDatePretty(appt.date)}${appt.time ? ' · ' + appt.time : ''}`;
+  toast.innerHTML = `
+    <div class="toast-text">
+      <div class="toast-title">${isPast ? '⚠ Saved — but that date already passed' : '✓ Saved'}</div>
+      <div class="toast-sub">${escapeHtml(label)} · ${escapeHtml(when)}</div>
+    </div>
+    <button id="toastUndo">Undo</button>
+  `;
+  toast.classList.add('show');
+  document.getElementById('toastUndo').addEventListener('click', async ()=>{
+    appointments = appointments.filter(a => a.id !== appt.id);
+    await saveAppointments();
+    render();
+    toast.classList.remove('show');
+    clearTimeout(toastTimer);
+  });
+  toastTimer = setTimeout(()=> toast.classList.remove('show'), 5000);
 }
 
 // Reads the confirmation back out loud so mom doesn't have to read the screen to know it worked.
@@ -680,24 +634,6 @@ function speakConfirmation(appt, isPast){
     window.speechSynthesis.speak(u);
   }catch(e){}
 }
-
-btnAgain.addEventListener('click', ()=>{
-  overlay.classList.remove('show');
-  pendingAppt = null;
-});
-
-btnSave.addEventListener('click', async ()=>{
-  if(!pendingAppt) return;
-  pendingAppt.doctorName = confirmDoctor.value.trim() || pendingAppt.doctorName;
-  pendingAppt.date = confirmDate.value || pendingAppt.date;
-  pendingAppt.time = confirmTime.value.trim() || pendingAppt.time;
-  appointments.push(pendingAppt);
-  await saveAppointments();
-  overlay.classList.remove('show');
-  chimeSuccess();
-  pendingAppt = null;
-  render();
-});
 
 // ---------- List rendering + hidden triple-tap delete ----------
 const tapState = {};
