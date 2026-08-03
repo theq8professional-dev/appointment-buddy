@@ -200,6 +200,15 @@
   .card-date{ font-weight:800; color:var(--teal-deep); font-size:15px; }
   .card-time{ font-size:14px; color:var(--ink-soft); }
   .empty{ color:var(--ink-soft); text-align:center; font-size:15px; margin-top:10px; max-width:280px; }
+  .log-link{
+    color: var(--cream-deep);
+    font-size:12px;
+    text-align:center;
+    margin-top:50px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .log-link:active{ color: var(--ink-soft); }
   .unsupported{ max-width:340px; text-align:center; color:var(--ink-soft); font-size:15px; line-height:1.5; }
 </style>
 </head>
@@ -232,6 +241,8 @@
 
   <div class="list" id="list"></div>
   <div class="empty" id="emptyMsg">No appointments yet. Press the button above whenever you book one.</div>
+
+  <div class="log-link" id="logLink">view log</div>
 
   <div class="toast" id="toast"></div>
 
@@ -266,9 +277,11 @@ const r1 = document.querySelector('.r1');
 const r2 = document.querySelector('.r2');
 
 let appointments = [];
+let debugLog = [];
 
 // ---------- Storage ----------
 const STORAGE_KEY = 'appointments-list';
+const LOG_KEY = 'debug-log';
 async function loadAppointments(){
   try{
     const res = await window.storage.get(STORAGE_KEY, false);
@@ -278,6 +291,37 @@ async function loadAppointments(){
 }
 async function saveAppointments(){
   try{ await window.storage.set(STORAGE_KEY, JSON.stringify(appointments), false); }catch(e){}
+}
+async function loadLog(){
+  try{
+    const res = await window.storage.get(LOG_KEY, false);
+    debugLog = res ? JSON.parse(res.value) : [];
+  }catch(e){ debugLog = []; }
+}
+async function saveLog(){
+  // Keep the last 300 entries so this can't grow unbounded during a long stress-test session.
+  if(debugLog.length > 300) debugLog = debugLog.slice(-300);
+  try{ await window.storage.set(LOG_KEY, JSON.stringify(debugLog), false); }catch(e){}
+}
+async function logAttempt(heard, parsed, outcome){
+  const stamp = new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+  const parsedStr = parsed
+    ? `specialty="${parsed.specialty || ''}" date="${parsed.date || ''}" time="${parsed.time || ''}" location="${parsed.location || ''}"`
+    : '(nothing parsed)';
+  debugLog.push(`[${stamp}] HEARD: "${heard}"  →  ${parsedStr}  →  ${outcome}`);
+  await saveLog();
+}
+function downloadLog(){
+  const content = debugLog.length ? debugLog.join('\n') : 'No log entries yet — try recording an appointment first.';
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'log.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ---------- Speech recognition ----------
@@ -539,7 +583,7 @@ function withTimeout(promise, ms){
 
 // ---------- Claude parsing (with automatic local fallback) ----------
 async function processTranscript(text){
-  if(!text){ hint.textContent = "I didn't hear anything — try again"; return; }
+  if(!text){ hint.textContent = "I didn't hear anything — try again"; await logAttempt('(nothing heard)', null, 'NOT SAVED (no speech detected)'); return; }
   micBtn.classList.add('thinking');
   hint.textContent = `Heard: "${text}" — figuring it out…`;
 
@@ -587,8 +631,10 @@ Respond with ONLY a raw JSON object, no markdown fences, no citations, no extra 
 
   if(!parsed.date){
     hint.textContent = `Heard: "${text}" — but couldn't catch a date. Try again and include one (like "tomorrow" or "Monday").`;
+    await logAttempt(text, parsed, 'NOT SAVED (no date caught)');
     return;
   }
+  await logAttempt(text, parsed, 'SAVED');
   await autoSave(parsed, text);
 }
 
@@ -716,8 +762,11 @@ function handleCardTap(id, card){
   state.timer = setTimeout(()=>{ state.count = 0; card.classList.remove('tap1','tap2'); }, 1200);
 }
 
+document.getElementById('logLink').addEventListener('click', downloadLog);
+
 // ---------- Init ----------
 loadAppointments();
+loadLog();
 </script>
 </body>
 </html>
