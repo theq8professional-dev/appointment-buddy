@@ -254,7 +254,7 @@ function tone(freq, duration, type='sine', startGain=0.14){
 function chimeStart(){ tone(660,0.14,'sine',0.13); setTimeout(()=>tone(880,0.16,'sine',0.13),90); }
 function chimeStop(){ tone(520,0.12,'sine',0.12); setTimeout(()=>tone(390,0.18,'sine',0.1),70); }
 function chimeSuccess(){ tone(523,0.12); setTimeout(()=>tone(659,0.12),100); setTimeout(()=>tone(784,0.22),200); }
-function chimePoof(){ tone(700,0.08,'triangle',0.1); setTimeout(()=>tone(300,0.16,'triangle',0.08),60); }
+function chimePoof(){ tone(880,0.09,'sine',0.12); setTimeout(()=>tone(1320,0.18,'sine',0.11),80); }
 
 // ---------- Elements ----------
 const micBtn = document.getElementById('micBtn');
@@ -427,13 +427,22 @@ const SPECIALTIES = ['orthopedic','orthopedist','dentist','dermatologist','cardi
   'skin doctor','heart doctor','bone doctor','foot doctor','kidney doctor','stomach doctor','lady doctor',
   'checkup','check-up','physical','dental','vision','ear doctor','lung doctor'];
 
+// Local calendar date as YYYY-MM-DD — never use toISOString() for "today," it converts
+// to UTC and silently shifts by a day depending on the phone's timezone/time of day.
+function localDateString(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// Speech recognition often spells small numbers out ("five") rather than as digits,
+// especially in casual sentences — "five pm" arrives as text, not "5 pm".
+const WORD_NUMS = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12 };
+
 function localParse(text, todayStr){
   const lower = text.toLowerCase();
   const [ty, tm, td] = todayStr.split('-').map(Number);
   const today = new Date(ty, tm-1, td);
   let date = '';
   let time = '';
-  let doctorName = '';
   let specialty = '';
 
   // --- date: explicit "Month Day[, Year]" wins over everything else ---
@@ -470,6 +479,11 @@ function localParse(text, todayStr){
   // --- time ---
   const timeRe = /(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)/i;
   const tmatch = text.match(timeRe);
+  const wordTimeRe = new RegExp(`\\b(${Object.keys(WORD_NUMS).join('|')})\\b(?:\\s+(thirty|fifteen|forty[\\s-]?five))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?`, 'i');
+  const wtmatch = lower.match(wordTimeRe);
+  const hourMinRe = /\b([01]?\d|2[0-3]):([0-5]\d)\b/; // 24-hour style like 18:10 or 14:00
+  const hmatch = text.match(hourMinRe);
+
   if(tmatch){
     let h = parseInt(tmatch[1], 10);
     const min = tmatch[2] || '00';
@@ -479,34 +493,41 @@ function localParse(text, todayStr){
     time = '12:00 PM';
   } else if(/\bmidnight\b/.test(lower)){
     time = '12:00 AM';
+  } else if(hmatch){
+    // 24-hour format, e.g. "18:10" spoken/typed directly — convert to 12-hour display.
+    let h = parseInt(hmatch[1], 10);
+    const min = hmatch[2];
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    time = `${h12}:${min} ${ampm}`;
   } else {
     const oclockRe = /(\d{1,2})\s*o[' ]?clock/i;
     const om = text.match(oclockRe);
     if(om){
-      // No am/pm given — assume daytime (AM for early hours, PM for the rest); easy to correct in the edit field.
       const h = parseInt(om[1], 10);
       const ampm = (h >= 1 && h <= 7) ? 'PM' : 'AM';
       time = `${h}:00 ${ampm}`;
+    } else if(wtmatch && WORD_NUMS[wtmatch[1].toLowerCase()]){
+      // Spoken number word, e.g. "five pm" or "four thirty" — speech recognition often
+      // spells small numbers out instead of using digits.
+      const h = WORD_NUMS[wtmatch[1].toLowerCase()];
+      let min = '00';
+      if(wtmatch[2]){
+        if(/thirty/i.test(wtmatch[2])) min = '30';
+        else if(/fifteen/i.test(wtmatch[2])) min = '15';
+        else if(/forty/i.test(wtmatch[2])) min = '45';
+      }
+      const ampm = wtmatch[3] ? (/p/i.test(wtmatch[3]) ? 'PM' : 'AM') : ((h >= 1 && h <= 7) ? 'PM' : 'AM');
+      time = `${h}:${min} ${ampm}`;
     }
   }
 
-  // --- doctor name: "Dr./Doctor <Name>" or "with <Name>" ---
-  const nameRe = /\b(?:dr\.?|doctor)\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)/;
-  const nmatch = text.match(nameRe);
-  if(nmatch){
-    doctorName = nmatch[1];
-  } else {
-    const withRe = /\bwith\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)\b/;
-    const wmatch = text.match(withRe);
-    if(wmatch && !SPECIALTIES.includes(wmatch[1].toLowerCase())) doctorName = wmatch[1];
-  }
-
-  // --- specialty: match against known keyword list ---
+  // --- specialty only: never capture a name, on purpose — nothing personal is stored ---
   for(const s of SPECIALTIES){
     if(lower.includes(s)){ specialty = s.replace(/\b\w/g, c => c.toUpperCase()); break; }
   }
 
-  return { doctorName, specialty, date, time, location: '', verified: false, verifyNote: '' };
+  return { specialty, date, time, location: '' };
 }
 
 function withTimeout(promise, ms){
@@ -523,25 +544,22 @@ async function processTranscript(text){
   hint.textContent = `Heard: "${text}" — figuring it out…`;
 
   const today = new Date();
-  const todayStr = today.toISOString().slice(0,10);
+  const todayStr = localDateString(today);
 
-  const systemPrompt = `Today's date is ${todayStr}. A person spoke out loud, possibly ramblingly, describing an upcoming appointment (often a doctor's appointment). Extract structured info from what they said, and use web search to do a quick sanity check on whether the named doctor/professional plausibly exists (e.g. search their name plus specialty or "doctor"). Resolve relative dates ("next Tuesday", "June 9th") into an actual date using today's date above.
+  const systemPrompt = `Today's date is ${todayStr}. A person spoke out loud, possibly ramblingly, describing an upcoming appointment (often a doctor's appointment). Extract structured info from what they said. Resolve relative dates ("next Tuesday", "June 9th") into an actual date using today's date above.
 
 If the speaker names a weekday together with a specific month and day and the two don't actually match (e.g. "Saturday, August 9th" when August 9th isn't a Saturday), IGNORE the weekday entirely and use the explicit month/day — people misspeak the weekday far more often than the date. Never let a mismatched weekday block or change the date you extract. The same goes for any other small self-contradiction: prefer the most specific, concrete detail (an exact date, an exact time) over a looser or conflicting one, and don't let the conflict stop you from producing a best-guess answer.
 
 If they give a month and day but no year (e.g. "October 9th"), assume the NEXT upcoming occurrence of that date relative to today — if that month/day has already passed this year, use next year; otherwise use this year. Never default to a past date.
 
-The speaker may not mention a doctor's name at all, only a specialty or reason (e.g. "the orthopedic," "my dentist," "eye doctor"). That's completely fine — leave doctorName as an empty string in that case rather than guessing a name, and fill in specialty as best you can from what they said.
+By design, this app never captures or stores a doctor's personal name — only the specialty or reason for the visit (e.g. "orthopedic," "dentist," "eye doctor," "gynecology"). Even if the speaker says a name out loud, ignore it entirely and extract only the specialty/reason.
 
 Respond with ONLY a raw JSON object, no markdown fences, no citations, no extra text. Shape:
 {
-  "doctorName": "string, best-guess proper name, or empty string if none mentioned",
   "specialty": "string, e.g. Nephrologist, Dentist, or empty string if unclear",
   "date": "YYYY-MM-DD, best guess, or empty string if unclear",
   "time": "string like '4:30 PM', or empty string if unclear",
-  "location": "string, clinic/hospital name if mentioned, else empty string",
-  "verified": true or false (true only if web search found a real plausible match for the name+specialty),
-  "verifyNote": "very short string, e.g. 'Found a nephrologist by this name nearby' or 'Could not confirm this name'"
+  "location": "string, clinic/hospital name if mentioned, else empty string"
 }`;
 
   let parsed = null;
@@ -551,10 +569,9 @@ Respond with ONLY a raw JSON object, no markdown fences, no citations, no extra 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1000,
+        max_tokens: 500,
         system: systemPrompt,
-        messages: [{ role: "user", content: `Here's what they said: "${text}"` }],
-        tools: [{ type: "web_search_20250305", name: "web_search" }]
+        messages: [{ role: "user", content: `Here's what they said: "${text}"` }]
       })
     }), 8000);
     const data = await response.json();
@@ -582,25 +599,20 @@ function formatDatePretty(iso){
   return dt.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
 }
 
-// Builds a natural label whether or not a doctor's name was actually given.
+// The specialty is the label — no names are ever captured or stored.
 function displayLabel(appt){
-  if(appt.doctorName) return `Dr. ${appt.doctorName}`;
-  if(appt.specialty) return `${appt.specialty} appointment`;
-  return 'Appointment';
+  return appt.specialty || 'Appointment';
 }
 
 // One motion: hold, talk, let go — it's saved. A brief toast with Undo is the only safety net.
 async function autoSave(parsed, rawText){
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = localDateString(new Date());
   const appt = {
     id: Date.now().toString(),
-    doctorName: (parsed.doctorName || '').trim(),
     specialty: parsed.specialty || '',
     date: parsed.date || '',
     time: parsed.time || '',
     location: parsed.location || '',
-    verified: !!parsed.verified,
-    verifyNote: parsed.verifyNote || '',
     rawText
   };
   const isPast = appt.date && appt.date < todayStr;
@@ -668,7 +680,7 @@ function render(){
     card.innerHTML = `
       <div>
         <div class="card-doc">${escapeHtml(displayLabel(appt))}</div>
-        <div class="card-sub">${escapeHtml(appt.doctorName ? (appt.specialty || appt.location || '') : (appt.location || ''))}</div>
+        <div class="card-sub">${escapeHtml(appt.location || '')}</div>
       </div>
       <div class="card-when">
         <div class="card-date">${formatDatePretty(appt.date)}</div>
