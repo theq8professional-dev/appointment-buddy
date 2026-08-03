@@ -3,27 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-<title>My Appointments</title>
+<title>Nightingale</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --cream: #FBF3E4;
-    --cream-deep: #F3E7D0;
-    --honey: #E8A33D;
-    --honey-deep: #C97F1E;
-    --teal: #1F6F6B;
-    --teal-deep: #14514E;
-    --plum: #6B4C6B;
-    --ink: #3A2E22;
-    --ink-soft: #6B5D4C;
+    --cream: #F6F1E4;
+    --cream-deep: #ECE0C7;
+    --honey: #D9A441;
+    --honey-deep: #A87423;
+    --teal: #22344E;
+    --teal-deep: #16223A;
+    --plum: #5B3A46;
+    --ink: #262420;
+    --ink-soft: #6B6357;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;}
   body{
     min-height:100vh;
     background: radial-gradient(1200px 800px at 50% -10%, var(--cream-deep), var(--cream) 60%);
-    font-family:'Nunito', sans-serif;
+    font-family:'Public Sans', sans-serif;
     color:var(--ink);
     display:flex;
     flex-direction:column;
@@ -31,21 +31,33 @@
     padding: 32px 20px 60px;
     overflow-x:hidden;
   }
+  .wordmark{
+    display:flex; align-items:center; gap:7px;
+    font-family:'Public Sans', sans-serif;
+    font-weight:800;
+    font-size:12px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    color: var(--honey-deep);
+    margin-bottom:16px;
+  }
+  .wordmark svg{ width:17px; height:17px; }
   .prompt{
-    font-family:'Fredoka', sans-serif;
+    font-family:'Fraunces', serif;
     font-weight:600;
-    font-size: clamp(22px, 5vw, 30px);
+    font-size: clamp(23px, 5vw, 31px);
     text-align:center;
-    margin: 8px 0 6px;
+    margin: 0 0 8px;
     color: var(--ink);
+    letter-spacing:-0.2px;
   }
   .subprompt{
-    font-size:16px;
+    font-size:15px;
     color:var(--ink-soft);
     text-align:center;
-    max-width:340px;
-    margin-bottom:28px;
-    line-height:1.4;
+    max-width:320px;
+    margin-bottom:30px;
+    line-height:1.5;
   }
 
   /* --- The Big Button --- */
@@ -75,8 +87,8 @@
     border-radius:50%;
     border:none;
     cursor:pointer;
-    background: radial-gradient(circle at 35% 30%, #F6C066, var(--honey) 55%, var(--honey-deep) 100%);
-    box-shadow: 0 12px 30px rgba(201,127,30,0.35), inset 0 -6px 14px rgba(0,0,0,0.15), inset 0 6px 10px rgba(255,255,255,0.35);
+    background: radial-gradient(circle at 35% 28%, #EFC878, var(--honey) 52%, var(--honey-deep) 100%);
+    box-shadow: 0 14px 32px rgba(168,116,35,0.28), inset 0 -5px 12px rgba(0,0,0,0.14), inset 0 5px 9px rgba(255,255,255,0.28);
     display:flex;
     align-items:center;
     justify-content:center;
@@ -148,7 +160,7 @@
     z-index:60;
   }
   .toast.show{ transform: translateY(0); opacity:1; }
-  .toast-title{ font-family:'Fredoka',sans-serif; font-weight:600; font-size:15px; }
+  .toast-title{ font-family:'Fraunces',serif; font-weight:600; font-size:15px; }
   .toast-sub{ font-size:13px; opacity:0.85; margin-top:2px; }
   .toast button{
     flex-shrink:0;
@@ -157,7 +169,7 @@
     border:2px solid rgba(255,255,255,0.4);
     border-radius:12px;
     padding:8px 14px;
-    font-family:'Fredoka',sans-serif;
+    font-family:'Fraunces',serif;
     font-weight:600;
     font-size:14px;
     cursor:pointer;
@@ -167,22 +179,22 @@
   .list{ width:100%; max-width:460px; display:flex; flex-direction:column; gap:14px; }
   .card{
     background:white;
-    border-radius:22px;
+    border-radius:16px;
     padding:18px 20px;
     display:flex;
     align-items:center;
     justify-content:space-between;
     gap:12px;
-    box-shadow:0 6px 18px rgba(58,46,34,0.08);
+    box-shadow:0 4px 16px rgba(38,36,32,0.07);
     user-select:none;
     cursor:pointer;
     transition: transform .12s ease, opacity .35s ease;
-    border-left: 6px solid var(--teal);
+    border-left: 5px solid var(--teal);
   }
   .card.tap1{ transform:scale(.985); }
   .card.tap2{ transform:scale(.965); filter:saturate(1.4); }
   .card.gone{ transform:scale(.3) rotate(8deg); opacity:0; }
-  .card-doc{ font-family:'Fredoka',sans-serif; font-size:18px; font-weight:600; }
+  .card-doc{ font-family:'Fraunces',serif; font-size:18px; font-weight:600; }
   .card-sub{ font-size:14px; color:var(--ink-soft); margin-top:2px; }
   .card-when{ text-align:right; }
   .card-date{ font-weight:800; color:var(--teal-deep); font-size:15px; }
@@ -193,6 +205,14 @@
 </head>
 <body>
 
+  <div class="wordmark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 15c3-1 5-4 8-4 2 0 3 1 4 1 3 0 5-3 6-5-1 4-3 7-6 8-2 .6-4 .2-5-.5"/>
+      <path d="M13 12c1.5 1 2.5 3 2 6-2-.5-4-2-4.5-4"/>
+      <circle cx="18.3" cy="7.2" r=".6" fill="currentColor" stroke="none"/>
+    </svg>
+    Nightingale
+  </div>
   <div class="prompt">When's your next appointment?</div>
   <div class="subprompt">Press and hold the button, then just talk. Let go when you're done.</div>
 
