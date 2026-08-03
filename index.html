@@ -163,7 +163,26 @@
     border-bottom: 2px dashed transparent;
   }
   .confirm-doctor:focus{ outline:none; border-bottom:2px dashed var(--honey); }
-  .confirm-meta{ font-size:17px; color:var(--ink-soft); margin-bottom:6px; }
+  .confirm-fields{ display:flex; gap:8px; justify-content:center; margin: 10px 0 4px; }
+  .confirm-input{
+    font-family:'Nunito',sans-serif;
+    font-size:15px; font-weight:700;
+    border: 2px solid #E4D6C0;
+    border-radius:12px;
+    padding:8px 10px;
+    color:var(--ink);
+    background:white;
+    text-align:center;
+  }
+  .confirm-input:focus{ outline:none; border-color:var(--honey); }
+  #confirmDate{ flex:1.2; }
+  #confirmTime{ flex:1; }
+  .confirm-specialty{ font-size:14px; color:var(--ink-soft); margin-bottom:4px; }
+  .confirm-warning{
+    display:inline-block; margin:8px 0; padding:8px 14px; border-radius:14px;
+    font-size:13px; font-weight:800;
+    background:#F8D9D3; color:#8A3A2C;
+  }
   .verify-tag{
     display:inline-block; margin-top:8px; padding:6px 14px; border-radius:999px;
     font-size:13px; font-weight:800;
@@ -233,7 +252,12 @@
     <div class="confirm-card">
       <div class="confirm-eyebrow">Did I get this right?</div>
       <input class="confirm-doctor" id="confirmDoctor" />
-      <div class="confirm-meta" id="confirmMeta"></div>
+      <div class="confirm-fields">
+        <input type="date" class="confirm-input" id="confirmDate" />
+        <input type="text" class="confirm-input" id="confirmTime" placeholder="e.g. 4:30 PM" />
+      </div>
+      <div class="confirm-specialty" id="confirmSpecialty"></div>
+      <div id="confirmWarning"></div>
       <div id="confirmVerify"></div>
       <div class="confirm-buttons">
         <button class="btn-again" id="btnAgain">Try again</button>
@@ -270,7 +294,10 @@ const listEl = document.getElementById('list');
 const emptyMsg = document.getElementById('emptyMsg');
 const overlay = document.getElementById('overlay');
 const confirmDoctor = document.getElementById('confirmDoctor');
-const confirmMeta = document.getElementById('confirmMeta');
+const confirmDate = document.getElementById('confirmDate');
+const confirmTime = document.getElementById('confirmTime');
+const confirmSpecialty = document.getElementById('confirmSpecialty');
+const confirmWarning = document.getElementById('confirmWarning');
 const confirmVerify = document.getElementById('confirmVerify');
 const btnSave = document.getElementById('btnSave');
 const btnAgain = document.getElementById('btnAgain');
@@ -436,7 +463,9 @@ const WEEKDAYS = ['sunday','monday','tuesday','wednesday','thursday','friday','s
 const SPECIALTIES = ['orthopedic','orthopedist','dentist','dermatologist','cardiologist','nephrologist','urologist',
   'gynecologist','pediatrician','optometrist','ophthalmologist','psychiatrist','therapist','physical therapist',
   'chiropractor','dermatology','oncologist','neurologist','ent','allergist','endocrinologist','podiatrist',
-  'eye doctor','general practitioner','primary care','gp','surgeon'];
+  'eye doctor','general practitioner','primary care','gp','surgeon','diabetes','diabetic','sugar doctor',
+  'skin doctor','heart doctor','bone doctor','foot doctor','kidney doctor','stomach doctor','lady doctor',
+  'checkup','check-up','physical','dental','vision','ear doctor','lung doctor'];
 
 function localParse(text, todayStr){
   const lower = text.toLowerCase();
@@ -466,7 +495,7 @@ function localParse(text, todayStr){
   } else if(/\btoday\b/.test(lower)){
     date = todayStr;
   } else {
-    const wdRe = new RegExp(`(next\\s+)?(${WEEKDAYS.join('|')})`, 'i');
+    const wdRe = new RegExp(`(next\\s+(?:week\\s+)?)?(${WEEKDAYS.join('|')})`, 'i');
     const wd = lower.match(wdRe);
     if(wd){
       const targetIdx = WEEKDAYS.indexOf(wd[2].toLowerCase());
@@ -490,6 +519,15 @@ function localParse(text, todayStr){
     time = '12:00 PM';
   } else if(/\bmidnight\b/.test(lower)){
     time = '12:00 AM';
+  } else {
+    const oclockRe = /(\d{1,2})\s*o[' ]?clock/i;
+    const om = text.match(oclockRe);
+    if(om){
+      // No am/pm given — assume daytime (AM for early hours, PM for the rest); easy to correct in the edit field.
+      const h = parseInt(om[1], 10);
+      const ampm = (h >= 1 && h <= 7) ? 'PM' : 'AM';
+      time = `${h}:00 ${ampm}`;
+    }
   }
 
   // --- doctor name: "Dr./Doctor <Name>" or "with <Name>" ---
@@ -592,6 +630,7 @@ function displayLabel(appt){
 }
 
 function showConfirmation(parsed, rawText){
+  const todayStr = new Date().toISOString().slice(0,10);
   pendingAppt = {
     id: Date.now().toString(),
     doctorName: (parsed.doctorName || '').trim(),
@@ -605,7 +644,15 @@ function showConfirmation(parsed, rawText){
   };
   confirmDoctor.value = pendingAppt.doctorName;
   confirmDoctor.placeholder = pendingAppt.specialty ? `${pendingAppt.specialty} (no name given)` : 'Doctor / provider name';
-  confirmMeta.textContent = `${formatDatePretty(pendingAppt.date)}${pendingAppt.time ? ' at ' + pendingAppt.time : ''}${pendingAppt.specialty ? ' · ' + pendingAppt.specialty : ''}`;
+  confirmDate.value = pendingAppt.date;
+  confirmTime.value = pendingAppt.time;
+  confirmSpecialty.textContent = pendingAppt.specialty || '';
+
+  const isPast = pendingAppt.date && pendingAppt.date < todayStr;
+  confirmWarning.innerHTML = isPast
+    ? `<span class="confirm-warning">⚠ That date's already passed — check it</span>`
+    : (!pendingAppt.date ? `<span class="confirm-warning">⚠ Couldn't catch a date — please set one</span>` : '');
+
   confirmVerify.innerHTML = !pendingAppt.doctorName
     ? ''
     : pendingAppt.verified
@@ -613,6 +660,25 @@ function showConfirmation(parsed, rawText){
       : `<span class="verify-tag unsure">? ${pendingAppt.verifyNote || 'Double-check the name'}</span>`;
   overlay.classList.add('show');
   hint.textContent = '';
+  speakConfirmation(pendingAppt, isPast);
+}
+
+// Reads the confirmation back out loud so mom doesn't have to read the screen to know it worked.
+function speakConfirmation(appt, isPast){
+  if(!window.speechSynthesis) return;
+  try{
+    window.speechSynthesis.cancel();
+    const parts = [];
+    parts.push(displayLabel(appt) + '.');
+    if(isPast) parts.push("Heads up, that date already passed, please check it.");
+    else{
+      parts.push(appt.date ? formatDatePretty(appt.date) + '.' : "I didn't catch a date.");
+      if(appt.time) parts.push('At ' + appt.time + '.');
+    }
+    const u = new SpeechSynthesisUtterance(parts.join(' '));
+    u.rate = 0.95;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
 }
 
 btnAgain.addEventListener('click', ()=>{
@@ -623,6 +689,8 @@ btnAgain.addEventListener('click', ()=>{
 btnSave.addEventListener('click', async ()=>{
   if(!pendingAppt) return;
   pendingAppt.doctorName = confirmDoctor.value.trim() || pendingAppt.doctorName;
+  pendingAppt.date = confirmDate.value || pendingAppt.date;
+  pendingAppt.time = confirmTime.value.trim() || pendingAppt.time;
   appointments.push(pendingAppt);
   await saveAppointments();
   overlay.classList.remove('show');
